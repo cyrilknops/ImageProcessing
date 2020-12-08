@@ -65,7 +65,7 @@ def average_slope_intercept(frame, line_segments):
     left_fit = []
     right_fit = []
 
-    boundary = 1/3
+    boundary = 1/2
     left_region_boundary = width * (1 - boundary)  # left lane line segment should be on left 2/3 of the screen
     right_region_boundary = width * boundary # right lane line segment should be on left 2/3 of the screen
 
@@ -125,17 +125,17 @@ while(cap.isOpened()):
     edges, mask, res = detect_edges(frame)
     cropped_edges = region_of_interest(edges)
     line_seg = detect_line_segments(cropped_edges)
-    #line_seg_avr = average_slope_intercept(frame, line_seg)
+    line_seg_avr = average_slope_intercept(frame, line_seg)
     lines = display_lines(frame, line_seg)
     masklines = display_lines(res, line_seg)
-    #lines_avr = display_lines(frame, line_seg_avr)
+    lines_avr = display_lines(frame, line_seg_avr)
 
     cv2.namedWindow('frame', cv2.WINDOW_NORMAL)
     cv2.resizeWindow('frame', 1200, 1200)
     cv2.namedWindow('lines_avr', cv2.WINDOW_NORMAL)
     cv2.resizeWindow('lines_avr', 1200, 1200)
-    cv2.imshow('frame', lines)
-    cv2.imshow('lines_avr',masklines)
+    cv2.imshow('frame', masklines)
+    cv2.imshow('lines_avr', lines_avr)
     k = cv2.waitKey(5) & 0xFF
     if k == 27:
         break
