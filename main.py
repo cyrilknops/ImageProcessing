@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 import logging
+import math
 
 def detect_edges(frame):
     # filter for blue lane lines
@@ -28,7 +29,7 @@ def region_of_interest(edges):
     height, width = edges.shape
     mask = np.zeros_like(edges)
 
-    # only focus bottom half of the screen
+    # only focus top half of the screen
     polygon = np.array([[
         (width, height * 1 / 2),
         (0, height * 1 / 2),
@@ -64,10 +65,9 @@ def average_slope_intercept(frame, line_segments):
     height, width, _ = frame.shape
     left_fit = []
     right_fit = []
-
     boundary = 1/2
     left_region_boundary = width * (1 - boundary)  # left lane line segment should be on left 2/3 of the screen
-    right_region_boundary = width * boundary # right lane line segment should be on left 2/3 of the screen
+    right_region_boundary = width * boundary  # right lane line segment should be on left 2/3 of the screen
 
     for line_segment in line_segments:
         for x1, y1, x2, y2 in line_segment:
@@ -80,27 +80,37 @@ def average_slope_intercept(frame, line_segments):
             if slope < 0:
                 if x1 < left_region_boundary and x2 < left_region_boundary:
                     left_fit.append((slope, intercept))
+
             else:
                 if x1 > right_region_boundary and x2 > right_region_boundary:
                     right_fit.append((slope, intercept))
-
     left_fit_average = np.average(left_fit, axis=0)
     if len(left_fit) > 0:
         lane_lines.append(make_points(frame, left_fit_average))
+        print(getAngle(make_points(frame, left_fit_average))) #get angle of the left line
 
     right_fit_average = np.average(right_fit, axis=0)
     if len(right_fit) > 0:
         lane_lines.append(make_points(frame, right_fit_average))
+        print(getAngle(make_points(frame, right_fit_average))) #get angle of the right line
 
     logging.debug('lane lines: %s' % lane_lines)  # [[[316, 720, 484, 432]], [[1009, 720, 718, 432]]]
-
+    #print(lane_lines)
     return lane_lines
+
+def getAngle(line):
+    x1, y1, x2, y2 = line[0]
+    deltaX = x2 - x1
+    deltaY = y2 - y1
+    rad = math.atan2(deltaY, deltaX)
+    deg = rad * (180 / math.pi)
+    return deg
 
 def make_points(frame, line):
     height, width, _ = frame.shape
     slope, intercept = line
-    y1 = height  # bottom of the frame
-    y2 = int( 1 / 2)  # make points from middle of the frame down
+    y2 = height  # bottom of the frame
+    y1 = int( 1 / 2)  # make points from middle of the frame down
 
     # bound the coordinates within the frame
     x1 = max(-width, min(2 * width, int((y1 - intercept) / slope)))
@@ -136,7 +146,7 @@ while(cap.isOpened()):
     cv2.resizeWindow('lines_avr', 1200, 1200)
     cv2.imshow('frame', masklines)
     cv2.imshow('lines_avr', lines_avr)
-    k = cv2.waitKey(5) & 0xFF
+    k = cv2.waitKey(25) & 0xFF
     if k == 27:
         break
 
