@@ -3,7 +3,13 @@ import cv2
 import logging
 import math
 
-def detect_edges(frame):
+
+def detect_edges(mask):
+    edges = cv2.Canny(mask, 200, 400)
+
+    return edges
+
+def mask_frame(frame):
     # filter for blue lane lines
     # Convert BGR to HSV
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
@@ -21,11 +27,9 @@ def detect_edges(frame):
     # Bitwise-AND mask and original image
     res = cv2.bitwise_and(frame, frame, mask=mask)
 
-    # detect edges
-    edges = cv2.Canny(mask, 200, 400)
+    return mask, res
 
-    return edges, mask, res
-def region_of_interest(edges):
+def region_of_interest(edges, frame):
     height, width = edges.shape
     mask = np.zeros_like(edges)
 
@@ -33,13 +37,15 @@ def region_of_interest(edges):
     polygon = np.array([[
         (width, height * 1 / 2),
         (0, height * 1 / 2),
-        (0, 0),
-        (width, 0),
+        (0, 60),
+        (width, 60),
     ]], np.int32)
 
     cv2.fillPoly(mask, polygon, 255)
     cropped_edges = cv2.bitwise_and(edges, mask)
-    return cropped_edges
+    res = cv2.bitwise_and(frame, frame, mask=mask)
+    return cropped_edges, res
+
 
 def detect_line_segments(cropped_edges):
     # tuning min_threshold, minLineLength, maxLineGap is a trial and error process by hand
@@ -50,6 +56,7 @@ def detect_line_segments(cropped_edges):
                                     np.array([]), minLineLength=8, maxLineGap=4)
 
     return line_segments
+
 
 def average_slope_intercept(frame, line_segments):
     """
@@ -65,7 +72,7 @@ def average_slope_intercept(frame, line_segments):
     height, width, _ = frame.shape
     left_fit = []
     right_fit = []
-    boundary = 1/2
+    boundary = 1 / 2
     left_region_boundary = width * (1 - boundary)  # left lane line segment should be on left 2/3 of the screen
     right_region_boundary = width * boundary  # right lane line segment should be on left 2/3 of the screen
 
@@ -87,35 +94,74 @@ def average_slope_intercept(frame, line_segments):
     left_fit_average = np.average(left_fit, axis=0)
     if len(left_fit) > 0:
         lane_lines.append(make_points(frame, left_fit_average))
-        print(getAngle(make_points(frame, left_fit_average))) #get angle of the left line
 
     right_fit_average = np.average(right_fit, axis=0)
     if len(right_fit) > 0:
         lane_lines.append(make_points(frame, right_fit_average))
-        print(getAngle(make_points(frame, right_fit_average))) #get angle of the right line
+
 
     logging.debug('lane lines: %s' % lane_lines)  # [[[316, 720, 484, 432]], [[1009, 720, 718, 432]]]
-    #print(lane_lines)
+    # print(lane_lines)
     return lane_lines
 
-def getAngle(line):
-    x1, y1, x2, y2 = line[0]
-    deltaX = x2 - x1
-    deltaY = y2 - y1
-    rad = math.atan2(deltaY, deltaX)
-    deg = rad * (180 / math.pi)
-    return deg
+def get_steering_angle(frame, lane_lines):
+    height, width, _ = frame.shape
+
+    if len(lane_lines) == 2:  # if two lane lines are detected
+        _, _, left_x2, _ = lane_lines[0][0]  # extract left x2 from lane_lines array
+        _, _, right_x2, _ = lane_lines[1][0]  # extract right x2 from lane_lines array
+        mid = int(width / 2)
+        x_offset = (left_x2 + right_x2) / 2 - mid
+        y_offset = int(height / 2)
+
+    elif len(lane_lines) == 1:  # if only one line is detected
+        x1, _, x2, _ = lane_lines[0][0]
+        x_offset = x2 - x1
+        y_offset = int(height / 2)
+
+    elif len(lane_lines) == 0:  # if no line is detected
+        x_offset = 0
+        y_offset = int(height / 2)
+
+    angle_to_mid_radian = math.atan(x_offset / y_offset)
+    angle_to_mid_deg = int(angle_to_mid_radian * 180.0 / math.pi)
+    steering_angle = angle_to_mid_deg + 90
+
+    return steering_angle
+
+
+def display_heading_line(frame, steering_angle, line_color=(0, 0, 255), line_width=5):
+    heading_image = np.zeros_like(frame)
+    height, width, _ = frame.shape
+    steering_angle = 180 - steering_angle
+    steering_angle_radian = steering_angle / 180.0 * math.pi
+    x1 = int(width / 2)
+    y1 = height
+    x2 = int(x1 - height / 2 / math.tan(steering_angle_radian))
+    y2 = int(height / 2)
+
+    cv2.line(heading_image, (x1, y1), (x2, y2), line_color, line_width)
+
+    heading_image = cv2.addWeighted(frame, 0.8, heading_image, 1, 1)
+
+    return heading_image
+
+def round_int(x):
+    if x == float("inf") or x == float("-inf"):
+        return 0  # or x or return whatever makes sense
+    return x
 
 def make_points(frame, line):
     height, width, _ = frame.shape
     slope, intercept = line
     y2 = height  # bottom of the frame
-    y1 = int( 1 / 2)  # make points from middle of the frame down
+    y1 = int(1 / 2)  # make points from middle of the frame down
 
     # bound the coordinates within the frame
     x1 = max(-width, min(2 * width, int((y1 - intercept) / slope)))
     x2 = max(-width, min(2 * width, int((y2 - intercept) / slope)))
     return [[x1, y1, x2, y2]]
+
 
 def display_lines(frame, lines, line_color=(0, 255, 0), line_width=2):
     line_image = np.zeros_like(frame)
@@ -126,26 +172,44 @@ def display_lines(frame, lines, line_color=(0, 255, 0), line_width=2):
     line_image = cv2.addWeighted(frame, 0.8, line_image, 1, 1)
     return line_image
 
+
+def adjust_gamma(image, gamma=1.0):
+    # build a lookup table mapping the pixel values [0, 255] to
+    # their adjusted gamma values
+    invGamma = 1.0 / gamma
+    table = np.array([((i / 255.0) ** invGamma) * 255
+    for i in np.arange(0, 256)]).astype("uint8")
+    # apply gamma correction using the lookup table
+    return cv2.LUT(image, table)
+
+
 cap = cv2.VideoCapture('videos/race.avi')
-while(cap.isOpened()):
+while (cap.isOpened()):
 
     # Take each frame
     _, frame = cap.read()
 
-    edges, mask, res = detect_edges(frame)
-    cropped_edges = region_of_interest(edges)
-    line_seg = detect_line_segments(cropped_edges)
-    line_seg_avr = average_slope_intercept(frame, line_seg)
-    lines = display_lines(frame, line_seg)
-    masklines = display_lines(res, line_seg)
-    lines_avr = display_lines(frame, line_seg_avr)
+    #frame = adjust_gamma(frame, 2)  # adjust gamma
+    mask, res = mask_frame(frame)  # add the HSV mask
+    edges = detect_edges(mask)  # detect edges
+    cropped_edges, frame_roi = region_of_interest(edges, frame)  # define region_of_interest
+    line_seg = detect_line_segments(cropped_edges)  # detect line segments
+    line_seg_avr = average_slope_intercept(frame, line_seg) # combine line segments into 1 line
+    lines = display_lines(frame, line_seg)  # display the line segments
+    masklines = display_lines(res, line_seg)  # display the line segments with the mask
+    lines_avr = display_lines(frame, line_seg_avr)  # display the line avr line segments
+    steering_angle = get_steering_angle(frame, line_seg_avr)  # calculate the steering angle
+    heading_image = display_heading_line(lines_avr, steering_angle)  # display the steering angle with the line segments
 
-    cv2.namedWindow('frame', cv2.WINDOW_NORMAL)
-    cv2.resizeWindow('frame', 1200, 1200)
-    cv2.namedWindow('lines_avr', cv2.WINDOW_NORMAL)
-    cv2.resizeWindow('lines_avr', 1200, 1200)
-    cv2.imshow('frame', masklines)
-    cv2.imshow('lines_avr', lines_avr)
+    cv2.namedWindow('result', cv2.WINDOW_NORMAL)
+    cv2.resizeWindow('result', 1200, 1200)
+    cv2.namedWindow('ROI', cv2.WINDOW_NORMAL)
+    cv2.resizeWindow('ROI', 1200, 1200)
+    cv2.namedWindow('ROI_MASK', cv2.WINDOW_NORMAL)
+    cv2.resizeWindow('ROI_MASK', 1200, 1200)
+    cv2.imshow('result', heading_image)
+    cv2.imshow('ROI', frame_roi)
+    cv2.imshow('ROI_MASK', lines)
     k = cv2.waitKey(25) & 0xFF
     if k == 27:
         break
