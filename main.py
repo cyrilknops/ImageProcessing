@@ -35,8 +35,8 @@ def region_of_interest(edges, frame):
 
     # only focus top half of the screen
     polygon = np.array([[
-        (width, height * 1 / 2),
-        (0, height * 1 / 2),
+        (width, height * 0.5),
+        (0, height * 0.5),
         (0, 60),
         (width, 60),
     ]], np.int32)
